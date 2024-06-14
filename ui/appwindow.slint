@@ -1,0 +1,25 @@
+import { Button, VerticalBox } from "std-widgets.slint";
+
+import "./resources/font/FiraCode-Medium.ttf";
+
+export component AppWindow inherits Window {
+    in-out property<int> counter: 42;
+    callback request-increase-value();
+    title: "Oxidoro Timer";
+    icon: @image-url("resources/Oxidoro.png");
+    padding: 10px;
+    default-font-size: 12pt;
+    default-font-family: "Fira Code";
+
+    VerticalBox {
+        Text {
+            text: "Counter: \{root.counter}";
+        }
+        Button {
+            text: "Increase value";
+            clicked => {
+                root.request-increase-value();
+            }
+        }
+    }
+}
