@@ -1,10 +1,13 @@
 import { Button, VerticalBox } from "std-widgets.slint";
+import {TimerLabel} from "timer.slint";
 
 import "./resources/font/FiraCode-Medium.ttf";
 
 export component AppWindow inherits Window {
     in-out property<int> counter: 42;
     callback request-increase-value();
+    in-out property<string> timer_string: "xx.xx";
+
     title: "Oxidoro Timer";
     icon: @image-url("resources/Oxidoro.png");
     padding: 10px;
@@ -20,6 +23,10 @@ export component AppWindow inherits Window {
             clicked => {
                 root.request-increase-value();
             }
+        }
+
+        timer:= TimerLabel {
+            time: timer_string;
         }
     }
 }

@@ -8,6 +8,11 @@ See Pomodoro Timer
 
 ## Usage
 
+Build
+`wasm-pack build --release --target web`
+Run
+`python3 -m http.server`
+
 TODO
 
 ## Next Steps
