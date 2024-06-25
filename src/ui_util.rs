@@ -18,7 +18,7 @@ pub fn data_to_ui(output: TimerOutput, ui_handle: &slint::Weak<AppWindow>) {
             }
             let _ = play_sound("assets/Program-Stopped-Sound.mp3".into());
             ui.set_timer_string("Ready to Start".into()); // TODO Probably want a Reset UI function to invoke
-        },
+        }
         TimerOutput::TimerProgress { seconds } => {
             ui.set_timer_string(seconds_to_h_m_s_display_string(seconds).into());
             if seconds == 0 {
@@ -37,44 +37,47 @@ pub fn data_to_ui(output: TimerOutput, ui_handle: &slint::Weak<AppWindow>) {
         TimerOutput::TimerReset { seconds } => {
             ui.set_timer_string(seconds_to_h_m_s_display_string(seconds).into());
             let _ = play_sound("assets/Reset-Sound.mp3".into()); // TODO Error Handling
-        },
-        TimerOutput::PhaseChange { prev_phase, next_phase, phase_completed } => {
+        }
+        TimerOutput::PhaseChange {
+            prev_phase,
+            next_phase,
+            phase_completed,
+        } => {
             match prev_phase {
                 ProgramPhase::BeginProgram => {
-                    let _ = play_sound("assets/Program-Start-Sound.mp3".into()); // TODO Error Handling
-                },
+                    let _ = play_sound("assets/Program-Start-Sound.mp3".into());
+                    // TODO Error Handling
+                }
                 ProgramPhase::TimeFor { duration: _ } => {
                     if phase_completed {
-                        
                     } else {
                         let _ = play_sound("assets/Skip-Sound.mp3".into()); // TODO Error Handling
                     }
-                    
-                },
-                ProgramPhase::EndProgram => {},
+                }
+                ProgramPhase::EndProgram => {}
                 ProgramPhase::ReceiveInput => {
                     let _ = play_sound("assets/Timer-Done-Sound.mp3".into());
-                },
-                _ => {},
+                }
+                _ => {}
             }
             match next_phase {
                 ProgramPhase::TimeFor { duration } => {
                     ui.invoke_start_timer();
                     ui.set_timer_string(seconds_to_h_m_s_display_string(duration).into());
-                },
+                }
                 ProgramPhase::EndProgram => {
                     let _ = play_sound("assets/Program-Done-Sound.mp3".into()); // TODO Error Handling
                     ui.set_timer_string("Ready to Start".into());
-                },
+                }
                 ProgramPhase::BeginProgram => {
                     let _ = play_sound("assets/Program-Done-Sound.mp3".into());
-                },
+                }
                 ProgramPhase::ReceiveInput => {
                     ui.set_timer_string("Input".into());
-                },
-                _ => {},
+                }
+                _ => {}
             }
-        },
+        }
     }
 }
 
@@ -119,7 +122,6 @@ mod ui_util_tests {
         assert_eq!("00:01:00", seconds_to_h_m_s_display_string(60));
     }
 
-    
     #[test]
     fn hour_threshold() {
         assert_eq!("01:00:00", seconds_to_h_m_s_display_string(3600));
