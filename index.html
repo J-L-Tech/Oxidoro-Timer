@@ -2,9 +2,9 @@
     <head>
         <link rel="icon" href="Oxidoro.png">
     </head>
-    <body style="background-color: #303030;">
+    <body style="background-color: #303030; width: 90%; height: 90%;">
         <!-- canvas required by the Slint runtime -->
-        <canvas id="canvas"></canvas>
+        <canvas id="canvas" data-slint-auto-resize-to-preferred="true""></canvas>
         <script type="module">
             // import the generated file.
             import init from "./pkg/oxidoro_timer.js";

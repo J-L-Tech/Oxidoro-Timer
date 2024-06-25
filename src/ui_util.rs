@@ -27,7 +27,7 @@ pub fn data_to_ui(output: TimerOutput, ui_handle: &slint::Weak<AppWindow>) {
         }
         TimerOutput::TimerPaused => {
             let _ = play_sound("assets/Pause-Sound.mp3".into());
-            ui.set_timer_string(format!("{} ||", ui.get_timer_string().to_string()).into());
+            ui.set_timer_string(format!("|| {}", ui.get_timer_string().to_string()).into());
         }
         TimerOutput::TimerResumed { seconds } => {
             ui.invoke_start_timer();

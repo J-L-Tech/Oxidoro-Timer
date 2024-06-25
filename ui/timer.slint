@@ -15,7 +15,9 @@ export component TimerLabel {
     callback button-clicked(TimerInput);
     in property <string> time: "TEST";
 
-    VerticalBox {    
+    VerticalBox {  
+        width: 100%;
+        height: 100%;  
         GridLayout {
             Row {
                 start := Button {
@@ -35,6 +37,7 @@ export component TimerLabel {
 
         Text {
             text: time;
+            height: 50%;
             font-size: 32pt;
             vertical-alignment: center;
             horizontal-alignment: center;
@@ -42,11 +45,11 @@ export component TimerLabel {
 
         input := Button {
             text: "input";
+            width: 100%;
             clicked => {
                 button-clicked(TimerInput.Input);
             }
         }
-
         GridLayout {
             Row {
                 pause := Button {

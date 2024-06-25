@@ -19,8 +19,13 @@ slint-build = "1.6"
 wasm-bindgen = { version = "0.2" }
 getrandom = { version = "0.2.2", features = ["js"] }
 
-[lib]
+[[bin]]
+name = "oxidoro-desktop"
 path = "src/main.rs"
+
+
+[lib]
+path = "src/web_main.rs"
 crate-type = ["cdylib"]
 
 [dependencies.web-sys]

@@ -11,7 +11,6 @@ pub enum TimerOutput {
     TimerResumed { seconds: usize },
 }
 
-// TODO Probably Want an Output and Input ProgramPhase to declutter UI code
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProgramPhase {
     BeginProgram,

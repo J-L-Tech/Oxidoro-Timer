@@ -1,4 +1,4 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, VerticalBox, TextEdit } from "std-widgets.slint";
 import {TimerLabel, TimerInput} from "timer.slint";
 
 import "./resources/font/FiraCode-Medium.ttf";
@@ -11,6 +11,8 @@ export component AppWindow inherits Window {
     callback stop-timer();
     callback start-timer();
     callback play-sound();
+    preferred-width: 600px;
+    preferred-height: 500px;
 
     //in-out property<int> counter: 42;
     in-out property<string> timer_string: "Ready to Start";
@@ -22,6 +24,8 @@ export component AppWindow inherits Window {
     default-font-family: "Fira Code";
 
     VerticalBox {
+        width: 100%;
+        height: 100%;
         // Text {
         //     text: "Counter: \{root.counter}";
         // }
@@ -33,7 +37,9 @@ export component AppWindow inherits Window {
         }
 
         timer := TimerLabel {
-            time: timer_string;   
+            time: timer_string;
+            width: 90%;
+            height: 90%;   
         }
     }
 }
