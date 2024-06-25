@@ -17,4 +17,4 @@ TODO
 
 ## Next Steps
 
-TODO
+Note, The Current Timer Scheme's Pause and Resume is only on the seconds level, so a pause and resume operate at the beginning of each second. A more sophisticated timer model would fix this, which is doable.

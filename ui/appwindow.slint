@@ -1,12 +1,19 @@
 import { Button, VerticalBox } from "std-widgets.slint";
-import {TimerLabel} from "timer.slint";
+import {TimerLabel, TimerInput} from "timer.slint";
 
 import "./resources/font/FiraCode-Medium.ttf";
 
 export component AppWindow inherits Window {
-    in-out property<int> counter: 42;
-    callback request-increase-value();
-    in-out property<string> timer_string: "xx.xx";
+    //callback request-increase-value();
+
+    callback button-pressed <=> timer.button-clicked;
+    callback step();
+    callback stop-timer();
+    callback start-timer();
+    callback play-sound();
+
+    //in-out property<int> counter: 42;
+    in-out property<string> timer_string: "Ready to Start";
 
     title: "Oxidoro Timer";
     icon: @image-url("resources/Oxidoro.png");
@@ -15,18 +22,18 @@ export component AppWindow inherits Window {
     default-font-family: "Fira Code";
 
     VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
-        }
+        // Text {
+        //     text: "Counter: \{root.counter}";
+        // }
         Button {
-            text: "Increase value";
+            text: "Test Sound";
             clicked => {
-                root.request-increase-value();
+                root.play_sound();
             }
         }
 
-        timer:= TimerLabel {
-            time: timer_string;
+        timer := TimerLabel {
+            time: timer_string;   
         }
     }
 }

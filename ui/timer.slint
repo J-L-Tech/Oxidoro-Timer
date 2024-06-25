@@ -1,41 +1,77 @@
-
 import { Button, VerticalBox } from "std-widgets.slint";
-export component TimerLabel {
 
-    in property <string> time: "xx:xx";
+export enum TimerInput {
+    Start,
+    Stop,
+    Step,
+    Skip,
+    Reset,
+    Pause,
+    Resume,
+    Input,
+}
+
+export component TimerLabel {
+    callback button-clicked(TimerInput);
+    in property <string> time: "TEST";
 
     VerticalBox {    
+        GridLayout {
+            Row {
+                start := Button {
+                    text: "Start Program";
+                    clicked => {
+                        button-clicked(TimerInput.Start);
+                    }
+                }
+                stop := Button {
+                    text: "Stop Program";
+                    clicked => {
+                        button-clicked(TimerInput.Stop);
+                    }
+                }
+            }
+        }
+
         Text {
             text: time;
             font-size: 32pt;
             vertical-alignment: center;
             horizontal-alignment: center;
-        }  
+        }
+
+        input := Button {
+            text: "input";
+            clicked => {
+                button-clicked(TimerInput.Input);
+            }
+        }
+
         GridLayout {
             Row {
-                start := Button {
-                    text: "start";
+                pause := Button {
+                    text: "pause";
                     clicked => {
-
+                        button-clicked(TimerInput.Pause);
                     }
                 }
-
-                stop := Button {
-                    text: "stop";
+                resume := Button {
+                    text: "resume";
                     clicked => {
-
+                        button-clicked(TimerInput.Resume);
                     }
                 }
+                
                 reset := Button {
                     text: "reset";
                     clicked => {
-
+                        button-clicked(TimerInput.Reset);
                     }
                 }
                 skip := Button {
                     text: "skip";
                     clicked => {
-
+                        button-clicked(TimerInput.Skip);
                     }
                 }
             }

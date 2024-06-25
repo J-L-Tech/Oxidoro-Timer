@@ -1,209 +1,517 @@
-use anyhow::Result;
-use rodio::{Decoder, OutputStream, Sink};
-use slint::Timer;
-use std::fs::File;
-use std::io::BufReader;
+use crate::TimerInput;
 
-// TODO The Borrow Checker Likely Requires a setup more like this:
-// State Transition Scheme that holds:
-// an Arc Mutex to the TimerModel Data
-// a Slint Timer that calls the step function using that Arc<Mutex>
-
-enum ViewDataUpdate {
-    ErrorOccurred(anyhow::Error),
-    ProgramDone,
-    CurrentTime(u32),
-    WaitingForInput,
-    Paused,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TimerOutput {
+    NoChange,
+    ProgramStopped { program_phase: ProgramPhase },
+    PhaseChange {prev_phase: ProgramPhase, next_phase: ProgramPhase, phase_completed: bool},
+    TimerProgress { seconds: usize },
+    TimerPaused,
+    TimerReset {seconds: usize},
+    TimerResumed { seconds: usize },
 }
 
-enum ProgramPhases {
-    /* Set The Timer To Run for the given number of seconds */
-    TimeFor { seconds: u32 },
-
-    /* Wait for User Interaction before Continuing to the Next Phase */
-    WaitForInput,
-
-    /* step: Where in the program to repeat from, step must be an earlier phase */
-    /* times: How Many Times to Repeat */
-    RepeatProgram { step: usize, times: usize },
-
-    /* For Infinite Loops, Place Only At the End of a Program */
-    Loop { step: usize },
+// TODO Probably Want an Output and Input ProgramPhase to declutter UI code
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProgramPhase {
+    BeginProgram,
+    TimeFor { duration: usize },
+    ReceiveInput,
+    Repeat {to_phase: usize, var_index: usize},
+    OffsetVariable{var_index: usize, offset: i8},
+    EndProgram,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum TimerState {
     Idle,
-    Running,
-    Paused,
+    Timer {
+        progress: usize,
+        duration: usize,
+        paused: bool,
+    },
+    Input,
 }
 
-pub enum TimerTransitions {
-    Interact,
-    Start,
-    Step,
-    Stop,
-    Pause,
-    Unpause,
-    Wait,
-}
-
-pub struct TimerModel {
+pub struct TimerFSM {
+    program: Vec<ProgramPhase>,
+    variables: Vec<i8>,
     state: TimerState,
-    seconds: Option<u32>,
-    repetitions: Option<usize>,
-    //timer: slint::Timer,
-    timer_sound: String,
-    report_callback: fn(ViewDataUpdate),
     phase: usize,
-    timer_program: Vec<ProgramPhases>,
 }
 
-impl TimerModel {
-    fn new(
-        timer_sound: &str,
-        report_callback: fn(ViewDataUpdate),
-        timer_program: Vec<ProgramPhases>,
-    ) -> TimerModel {
-        TimerModel {
+/**
+ * @return the State the Timer Should Be In After Transitioning to the Given Phase
+ */
+fn phase_transition(phase: &mut usize, state: &mut TimerState, program: &Vec<ProgramPhase>) {
+    return match program.get(*phase) {
+        Some(program_phase) => {
+            match program_phase {
+                ProgramPhase::TimeFor { duration } => {
+                    *state = TimerState::Timer {
+                        progress: *duration,
+                        duration: *duration,
+                        paused: false,
+                    }
+                }
+                ProgramPhase::BeginProgram | ProgramPhase::EndProgram => {
+                    *state = TimerState::Idle; 
+                    *phase = 0;
+                },
+                ProgramPhase::ReceiveInput => {
+                    *state = TimerState::Input;
+                },
+                ProgramPhase::Repeat { to_phase, var_index } => {
+                    todo!(); // Check if variable is zero
+                    *phase = *to_phase;
+                    phase_transition(phase, state, program);
+                },
+                ProgramPhase::OffsetVariable { var_index, offset } => {
+                    todo!(); // Edit Variable
+                    *phase += 1;
+                    phase_transition(phase, state, program);
+                },
+            }
+        }
+        None => {
+            *state = TimerState::Idle; 
+            //*phase = 0;
+        }
+    };
+}
+
+impl TimerFSM {
+
+    pub fn new(program: Vec<ProgramPhase>, variables: Option<Vec<i8>>) -> TimerFSM {
+        TimerFSM {
+            program: program,
             state: TimerState::Idle,
-            seconds: None,
-            repetitions: None,
-            //timer: Timer::default(),
-            timer_sound: timer_sound.to_string(),
-            report_callback: report_callback,
             phase: 0,
-            timer_program: timer_program,
+            variables: variables.unwrap_or(vec![]),
         }
     }
 
-    fn next(&mut self, transition: TimerTransitions) {
-        self.state = match (self.state, transition) {
-            (_, TimerTransitions::Stop) => {
-                //self.timer.stop();
-                TimerState::Idle
-            },
-            (TimerState::Idle, TimerTransitions::Start) => self.next_phase(),
-            (TimerState::Idle, _) => self.state,
-            (TimerState::Running, TimerTransitions::Step) => {
-                match self.seconds {
-                    Some(seconds) => {
-                        if seconds != 0 {
-                            self.seconds = Some(seconds - 1);
-                        }
-                        else {
-                            self.seconds = None;    
-                        }
-                        self.state
-                    },
-                    None => self.next_phase(),
-                }
-            },
-            (TimerState::Running, TimerTransitions::Pause) => {
-                (self.report_callback)(ViewDataUpdate::Paused);
-                TimerState::Paused
-            },
-            (TimerState::Running, _) => self.state,
-            (TimerState::Paused, TimerTransitions::Unpause) => {
-                
-                TimerState::Running
-            },
-            (TimerState::Paused, _) => self.state,
-        };
-    }
-
-    fn next_phase(&mut self) -> TimerState {
-        if self.phase >= self.timer_program.len() {
-            match play_sound(Some(&self.timer_sound)) {
-                Ok((sink, _out_stream)) => sink.sleep_until_end() /* TODO Maybe Put this in it's own thread */,
-                Err(e) => (self.report_callback)(ViewDataUpdate::ErrorOccurred(e))
+    pub fn input(&mut self, input: TimerInput) -> TimerOutput {
+        let mut output: TimerOutput = TimerOutput::NoChange;
+        match (&mut self.state, input) {
+            (_, TimerInput::Stop) => {
+                output = TimerOutput::ProgramStopped {
+                    program_phase: *self.program.get(self.phase).unwrap_or(&ProgramPhase::EndProgram),
+                };
+                self.phase = 0;
+                phase_transition( &mut self.program.len(), &mut self.state, &self.program);
             }
-            (self.report_callback)(ViewDataUpdate::ProgramDone);
-            return TimerState::Idle;
+            (TimerState::Idle, TimerInput::Start) => {
+                output = TimerOutput::PhaseChange { 
+                    prev_phase: ProgramPhase::BeginProgram, 
+                    next_phase: self.program[0], 
+                    phase_completed: true,
+                };
+                phase_transition( &mut self.phase, &mut self.state, &self.program);
+            }
+            (TimerState::Idle, _) => {},
+            (_, TimerInput::Start) => {},
+            (TimerState::Timer {..} | TimerState::Input, TimerInput::Skip,) => {
+                output = self.next_phase(false);
+            }
+            (
+                TimerState::Timer {
+                    progress,
+                    duration: _,
+                    paused,
+                },
+                TimerInput::Step,
+            ) => {
+                if *paused {
+                    output = TimerOutput::NoChange;
+                } else if *progress > 0 {
+                    *progress -= 1;
+                    output = TimerOutput::TimerProgress { seconds: *progress };
+                } else {
+                    output = self.next_phase(true);
+                }
+            }
+            (
+                TimerState::Timer {
+                    progress,
+                    duration,
+                    paused: _,
+                },
+                TimerInput::Reset,
+            ) => {
+                *progress = *duration;
+                output = TimerOutput::TimerReset { seconds: *progress };
+            }
+            (
+                TimerState::Timer {
+                    progress: _,
+                    duration: _,
+                    paused,
+                },
+                TimerInput::Pause,
+            ) => {
+                *paused = true;
+                output = TimerOutput::TimerPaused;
+            }
+            (
+                TimerState::Timer {
+                    progress,
+                    duration: _,
+                    paused,
+                },
+                TimerInput::Resume,
+            ) => {
+                *paused = false;
+                output = TimerOutput::TimerResumed { seconds: *progress };
+            }
+            (TimerState::Timer {..}, _,) => {},
+            (TimerState::Input, TimerInput::Input) => {
+                output = self.next_phase(true);
+            },
+            (TimerState::Input, _) => {},
         }
+        return output;
+    }
+
+
+    fn next_phase(&mut self, prev_completed: bool) -> TimerOutput {
+        let prev_phase: ProgramPhase = self.program[self.phase];
         self.phase += 1;
-        match self.timer_program[self.phase] {
-            ProgramPhases::TimeFor { seconds } => {
-                self.seconds = Some(seconds);
-                (self.report_callback)(ViewDataUpdate::CurrentTime(seconds));
-                return TimerState::Running;
-            }
-            ProgramPhases::WaitForInput => {
-                (self.report_callback)(ViewDataUpdate::WaitingForInput);
-                return TimerState::Running;
-            }
-            /* May Want to Report this to the UI */
-            ProgramPhases::RepeatProgram { step, times } => {
-                match self.repetitions {
-                    Some(repeats) => {
-                        if repeats != 0 {
-                            self.repetitions = Some(repeats - 1);
-                        } else {
-                            self.repetitions = None;
-                        }
-                    }
-                    None => {
-                        self.repetitions = Some(times - 1);
-                        self.phase = step - 1;
-                    }
-                }
-                return self.next_phase();
-            }
-            ProgramPhases::Loop { step } => {
-                self.phase = step - 1;
-                return self.next_phase();
-            }
-        }
+        phase_transition( &mut self.phase, &mut self.state, &self.program);
+        return TimerOutput::PhaseChange { prev_phase: prev_phase, next_phase: *self.program.get(self.phase).unwrap_or(&ProgramPhase::EndProgram), phase_completed: prev_completed };
     }
-}
 
-fn play_sound(path: Option<&str>) -> Result<(Sink, OutputStream)> {
-    let audio_path: &str = path.unwrap_or("assets/Timer-Done-Sound.mp3");
+    // fn to_phase(&mut self, phase_offset: usize) -> ProgramPhase {
+    //     self.phase += phase_offset;
+    //     match self.program.get(self.phase) {
+    //         Some(phase_ref) => {
+    //             let program_phase: ProgramPhase = *phase_ref;
+    //             match program_phase {
+    //                 ProgramPhase::TimeFor { duration } => {
+    //                     self.state = TimerState::Timer {
+    //                         progress: duration,
+    //                         duration: duration,
+    //                         paused: false,
+    //                     };
+    //                 }
+    //                 ProgramPhase::BeginProgram => self.to_default(),
+    //                 ProgramPhase::EndProgram => self.to_default(),
+    //                 ProgramPhase::ReceiveInput => {
+    //                     self.state = TimerState::Input;
+    //                 },
+    //                 ProgramPhase::Repeat { to_phase } => {
 
-    // _stream must live as long as the sink
-    let (stream, stream_handle) = OutputStream::try_default()?;
-    let sink = Sink::try_new(&stream_handle)?;
-
-    let file = BufReader::new(File::open(audio_path)?);
-
-    // Decode that sound file into a source
-    let source = Decoder::new(file)?;
-    sink.append(source);
-
-    // The sound plays in a separate thread. This call will block the current thread until the sink
-    // has finished playing all its queued sounds.
-    //sink.sleep_until_end();
-    return Ok((sink, stream));
+    //                 },
+    //             }
+    //             return program_phase;
+    //         },
+    //         None => {
+    //             self.to_default();
+    //             return ProgramPhase::EndProgram;
+    //         },
+    //     }
+    // }
 }
 
 #[cfg(test)]
 mod timer_util_tests {
 
-    use super::play_sound;
-    use std::panic;
+    use super::{ProgramPhase, TimerFSM, TimerInput, TimerOutput, TimerState};
+    use ProgramPhase::*;
+    use TimerInput::*;
+    use TimerOutput::*;
+    use TimerState::*;
 
     #[test]
-    fn play_default_sound() {
-        match play_sound(None) {
-            Ok((sink, _stream)) => sink.sleep_until_end(),
-            Err(e) => panic!("{}", e),
+    fn timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![TimeFor { duration: seconds }], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange { prev_phase: BeginProgram, next_phase: TimeFor { duration: seconds }, phase_completed: true },
+            model.input(Start)
+        );
+        for i in 1..seconds {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds - i
+                },
+                model.input(Step)
+            );
         }
+        assert_eq!(TimerProgress { seconds: 0 }, model.input(Step));
+        assert_eq!(PhaseChange {prev_phase:TimeFor{duration:seconds}, next_phase:EndProgram, phase_completed: true }, model.input(Step));
+        assert_eq!(Idle, model.state);
     }
 
     #[test]
-    fn play_specified_sound() {
-        match play_sound(Some("assets/Timer-Done-Sound.mp3")) {
-            Ok((sink, _stream)) => sink.sleep_until_end(),
-            Err(e) => panic!("{}", e),
-        }
+    fn input_program() {
+        let mut model: TimerFSM = TimerFSM::new(vec![ReceiveInput], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(PhaseChange {prev_phase: BeginProgram, next_phase: ReceiveInput, phase_completed: true }, model.input(TimerInput::Start));
+        assert_eq!(PhaseChange {prev_phase: ReceiveInput, next_phase:EndProgram, phase_completed: true }, model.input(TimerInput::Input));
+        assert_eq!(Idle, model.state);
     }
 
     #[test]
-    fn err_on_invalid_specified_sound() {
-        match play_sound(Some("")) {
-            Ok((_sink, _stream)) => panic!("Should Err, Instead was Ok"),
-            Err(_) => (),
+    fn skip_input_program() {
+        let mut model: TimerFSM = TimerFSM::new(vec![ReceiveInput], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(PhaseChange {prev_phase: BeginProgram, next_phase: ReceiveInput, phase_completed: true }, model.input(TimerInput::Start));
+        assert_eq!(PhaseChange {prev_phase: ReceiveInput, next_phase:EndProgram, phase_completed: false }, model.input(TimerInput::Skip));
+        assert_eq!(Idle, model.state);
+    }
+
+    #[test]
+    fn stop_timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![TimeFor { duration: seconds }], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange { prev_phase: BeginProgram, next_phase: TimeFor { duration: seconds }, phase_completed: true },
+            model.input(Start)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        for i in 1..seconds {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds - i
+                },
+                model.input(Step)
+            );
         }
+        assert_eq!(
+            ProgramStopped {
+                program_phase: TimeFor { duration: seconds }
+            },
+            model.input(Stop)
+        );
+        assert_eq!(Idle, model.state);
+        assert_eq!(0, model.phase);
+    }
+
+    #[test]
+    fn reset_timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![TimeFor { duration: seconds }], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange { prev_phase: BeginProgram, next_phase: TimeFor { duration: seconds }, phase_completed: true },
+            model.input(Start)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        for i in 1..seconds {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds - i
+                },
+                model.input(Step)
+            );
+        }
+        assert_eq!(TimerReset { seconds: seconds }, model.input(Reset));
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        assert_eq!(0, model.phase);
+    }
+
+    #[test]
+    fn skip_timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![
+            TimeFor { duration: seconds },
+            TimeFor {
+                duration: seconds + 1,
+            },
+        ], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange {prev_phase:BeginProgram,next_phase:TimeFor{duration:seconds}, phase_completed: true },
+            model.input(Start)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        assert_eq!(PhaseChange { prev_phase: TimeFor { duration: seconds }, next_phase: TimeFor { duration: seconds + 1 }, phase_completed: false }, model.input(Skip));
+        assert_eq!(1, model.phase);
+        assert_eq!(
+            Timer {
+                progress: seconds + 1,
+                duration: seconds + 1,
+                paused: false
+            },
+            model.state
+        );
+    }
+
+    #[test]
+    fn pause_timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![TimeFor { duration: seconds }], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange { prev_phase: BeginProgram, next_phase: TimeFor { duration: seconds }, phase_completed: true },
+            model.input(Start)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        assert_eq!(TimerPaused, model.input(Pause));
+        assert_eq!(0, model.phase);
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: true
+            },
+            model.state
+        );
+        assert_eq!(NoChange, model.input(Step));
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: true
+            },
+            model.state
+        );
+    }
+
+    #[test]
+    fn resume_timer_program() {
+        let seconds: usize = 3;
+        let mut model: TimerFSM = TimerFSM::new(vec![TimeFor { duration: seconds }], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange {prev_phase:BeginProgram,next_phase:TimeFor{duration:seconds}, phase_completed: true },
+            model.input(Start)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        assert_eq!(TimerPaused, model.input(Pause));
+        assert_eq!(
+            Timer {
+                progress: seconds,
+                duration: seconds,
+                paused: true
+            },
+            model.state
+        );
+        assert_eq!(TimerResumed { seconds: seconds }, model.input(Resume));
+        assert_eq!(
+            TimerProgress {
+                seconds: seconds - 1
+            },
+            model.input(Step)
+        );
+        assert_eq!(
+            Timer {
+                progress: seconds - 1,
+                duration: seconds,
+                paused: false
+            },
+            model.state
+        );
+        assert_eq!(0, model.phase);
+    }
+
+    #[test]
+    fn multi_timer_program() {
+        let seconds: usize = 1;
+        let mut model: TimerFSM = TimerFSM::new(vec![
+            TimeFor { duration: seconds },
+            TimeFor {
+                duration: seconds + 1,
+            },
+            TimeFor {
+                duration: seconds + 2,
+            },
+        ], None);
+        assert_eq!(Idle, model.state);
+        assert_eq!(
+            PhaseChange {prev_phase:BeginProgram,next_phase:TimeFor{duration:seconds}, phase_completed: true },
+            model.input(Start)
+        );
+        for i in 1..seconds {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds - i
+                },
+                model.input(Step)
+            );
+        }
+        model.input(Step);
+        assert_eq!(
+            PhaseChange {prev_phase:TimeFor{duration:seconds}, next_phase:TimeFor{duration:seconds+1}, phase_completed: true },
+            model.input(Step)
+        );
+        for i in 1..(seconds + 1) {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds + 1 - i
+                },
+                model.input(Step)
+            );
+        }
+        assert_eq!(
+            TimerProgress { seconds: 0 },
+            model.input(Step)
+        );
+        assert_eq!(
+            PhaseChange {prev_phase:TimeFor{duration:seconds + 1},next_phase:TimeFor{duration:seconds + 2}, phase_completed: true },
+            model.input(Step)
+        );
+        for i in 1..(seconds + 2) {
+            assert_eq!(
+                TimerProgress {
+                    seconds: seconds + 2 - i
+                },
+                model.input(Step)
+            );
+        }
+        assert_eq!(
+            TimerProgress { seconds: 0 },
+            model.input(Step)
+        );
+        assert_eq!(
+            PhaseChange {prev_phase:TimeFor{duration:seconds + 2}, next_phase:EndProgram, phase_completed: true },
+            model.input(Step)
+        );
+        assert_eq!(Idle, model.state);
     }
 }

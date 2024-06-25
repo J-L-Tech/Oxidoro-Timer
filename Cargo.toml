@@ -9,10 +9,8 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.86"
-chrono = "0.4.38"
 rodio = "0.18.1"
 slint = "1.6"
-timer = "0.2.0"
 
 [build-dependencies]
 slint-build = "1.6"
@@ -24,3 +22,10 @@ getrandom = { version = "0.2.2", features = ["js"] }
 [lib]
 path = "src/main.rs"
 crate-type = ["cdylib"]
+
+[dependencies.web-sys]
+version = "0.3.69"
+features = [
+  'HtmlAudioElement',
+  'HtmlMediaElement'
+]
