@@ -1,9 +1,10 @@
 # Oxidoro
 
-A Pomodoro Timer for the Web made with Slint and Rust
+A Programmable Timer for the Web made with Slint and Rust
 
 ## About
 
+The goal of this project is to create a way to layout the behavior for a multistage timer/activity: like Pomodoro, Exercise Routines / PT etc.
 See Pomodoro Timer
 
 ## Usage
@@ -17,4 +18,8 @@ TODO
 
 ## Next Steps
 
-Note, The Current Timer Scheme's Pause and Resume is only on the seconds level, so a pause and resume operate at the beginning of each second. A more sophisticated timer model would fix this, which is doable.
+- [ ] The Current Timer Scheme's Pause and Resume is only on the seconds level, so a pause and resume operate at the beginning of each second. A more sophisticated timer model would fix this, which is doable.
+- [ ] "Play Sound" and "Display Arbitrary Text" as options in a program
+- [ ] Editor for the user to create their own programs
+- [ ] Getting the App to take up the whole page of the browser for multiple screen sizes
+
